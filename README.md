@@ -61,14 +61,16 @@ tsc --init
 目前除了在nodejs代码里用`'@babel/preset-typescript'`插件以外，不知道怎么快速方便地编译`src`文件夹下的ts，只好：先手工修改`tsconfig.json`的`include`和`compilerOptions.module`，接着`tsc`编译，最后还原`tsconfig.json`。
 
 ### 读取单个文件
-`getModuleInfo`函数。
+`getModuleInfo`函数主要分析文件的依赖和完成代码转换。
 
 1. 我们需要分析文件的`import`语句，把依赖的文件（相对路径）转换为相对于项目根目录的路径（下称“绝对路径”）。使用babel相关的库`@babel/parser`、`@babel/traverse`和`@babel/core`完成。
-2. 在此读取了文件，因此可以顺便完成代码转换。用`@babel/core`完成，使用的是`transformFromAst`方法。
-3. 我们需要的保证生成的js的模块规范是`commonjs`，对于编译js的情况不需要特别指明，而编译ts的情况需要指明插件：`plugins: ['@babel/plugin-transform-modules-commonjs']`。
+2. 代码转换用`@babel/core`的`transformFromAst`方法完成。
+3. 我们需要保证生成的js的模块规范是`commonjs`。对于编译js的情况不需要特别指明，而编译ts的情况需要指明插件：`plugins: ['@babel/plugin-transform-modules-commonjs']`。
 
 #### 如何支持typescript的编译
-只需要修改`@babel/parser`的`parse`方法和`@babel/core`的`transformFromAst`方法的调用方式。需要用到`'@babel/preset-typescript'`这个插件。相关语句：
+只需要修改`@babel/parser`的`parse`方法和`@babel/core`的`transformFromAst`方法的调用方式。需要用到`@babel/preset-typescript`这个插件。`@babel/preset-typescript`没有`@babel/preset-env`方便，需要指明`filename`属性。
+
+相关语句：
 ```ts
 const ast = parser.parse(body, {
   sourceType: 'module',
@@ -94,7 +96,6 @@ babel.transformFromAst(ast, undefined,
 `parseModule`函数。因为循环依赖也只不过是形成递归，所以依赖图不局限于DAG，可以是任意有向图。所以只需要用bfs遍历一下（这里更正参考链接1的一处小错误，遍历算法不是递归而是bfs）。
 
 1. `parseModule`函数中的for循环`for (const { deps } of a)`用到了它会继续遍历新加入的元素的特性，不能替换为`forEach`，是js实现bfs的最简方案。
-
 2. `parseModule`函数中的`await Promise.all`是循环中使用`async/await`的解决方案（参考链接4）。
 
 `parseModule`函数的输出为`depGraph`哈希表，其一个对象的`deps`属性应该设计为一个哈希表，而非直接设计为数组，下文会解释原因。
