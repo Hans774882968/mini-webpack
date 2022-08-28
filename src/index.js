@@ -5,4 +5,4 @@ console.log(add(10, 20, 30, 40));
 console.log(minus(20, 5));
 console.log(format(new Date()));
 console.log(f());
-console.log(dis(1, 1, 1), alsoDis(1, 1, 1));
+console.log(dis(1, 1, 1), +alsoDis(1, 1, 1) + 2);

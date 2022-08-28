@@ -4,10 +4,17 @@ import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import * as babel from '@babel/core';
 
+function getType (): 'ts' | 'js' {
+  return path.extname(config.entry) === '.ts' ? 'ts' : 'js';
+}
+
 const getModuleInfo = async (file: string) => {
-  if (!path.extname(file)) file += '.js';
+  if (!path.extname(file)) file += getType() === 'ts' ? '.ts' : '.js';
   const body = fs.readFileSync(file, 'utf-8');
-  const ast = parser.parse(body, { sourceType: 'module' });
+  const ast = parser.parse(body, {
+    sourceType: 'module',
+    plugins: getType() === 'ts' ? ['decorators-legacy', 'typescript'] : []
+  });
   const dirname = path.dirname(file);
   const deps: {[key: string]: string} = {};
   traverse(ast, {
@@ -18,11 +25,19 @@ const getModuleInfo = async (file: string) => {
     }
   });
   const { code } = await new Promise<babel.BabelFileResult>((resolve, reject) => {
-    babel.transformFromAst(ast, undefined, { presets: ['@babel/preset-env'] },
+    babel.transformFromAst(ast, undefined,
+      getType() === 'ts' ?
+        {
+          presets: ['@babel/preset-typescript'],
+          filename: file,
+          plugins: ['@babel/plugin-transform-modules-commonjs']
+        } :
+        { presets: ['@babel/preset-env'] },
       (err, result) => {
         if (err) reject(err);
         resolve(result as babel.BabelFileResult);
-      });
+      }
+    );
   });
   return { file, code: code || '', deps };
 };
@@ -43,20 +58,24 @@ const parseModule = async (entryPath: string) => {
 
 const getBundle = async (entryPath: string) => {
   const depGraph = JSON.stringify(await parseModule(entryPath));
-  return `(function (graph) {
-  function require(file) {
-    function absRequire(relPath) {
+  return `;(function (graph) {
+  var exportsInfo = {};
+  function require (file) {
+    if (exportsInfo[file]) return exportsInfo[file];
+    function absRequire (relPath) {
       return require(graph[file].deps[relPath]);
     }
     var exports = {};
-    (function (require,exports,code) {
+    exportsInfo[file] = exports;
+    (function (require, exports, code) {
       eval(code);
-    })(absRequire,exports,graph[file].code);
+    })(absRequire, exports, graph[file].code);
     return exports;
   }
   require('${entryPath}');
-})(${depGraph})`;
+})(${depGraph});`;
 };
+
 
 type MyConfig = {
   entry: string;
@@ -76,10 +95,10 @@ const main = async (config: MyConfig) => {
 };
 
 const config: MyConfig = {
-  entry: './src/index.js',
+  entry: './src/index.ts',
   output: {
     path: './dist',
-    filename: 'bundle.js'
+    filename: 'bundle_ts.js'
   }
 };
 

@@ -40,11 +40,18 @@ const path_1 = __importDefault(require("path"));
 const parser = __importStar(require("@babel/parser"));
 const traverse_1 = __importDefault(require("@babel/traverse"));
 const babel = __importStar(require("@babel/core"));
+function getType() {
+    return path_1.default.extname(config.entry) === '.ts' ? 'ts' : 'js';
+}
 const getModuleInfo = (file) => __awaiter(void 0, void 0, void 0, function* () {
     if (!path_1.default.extname(file))
-        file += '.js';
+        file += getType() === 'ts' ? '.ts' : '.js';
     const body = fs_1.default.readFileSync(file, 'utf-8');
-    const ast = parser.parse(body, { sourceType: 'module' });
+    const ast = parser.parse(body, {
+        sourceType: 'module',
+        plugins: getType() === 'ts' ? ['decorators-legacy', 'typescript'] : []
+    });
+    // console.log('p1', file);
     const dirname = path_1.default.dirname(file);
     const deps = {};
     (0, traverse_1.default)(ast, {
@@ -54,13 +61,21 @@ const getModuleInfo = (file) => __awaiter(void 0, void 0, void 0, function* () {
             deps[relativeDir] = abspath;
         }
     });
+    // console.log('p2', file);
     const { code } = yield new Promise((resolve, reject) => {
-        babel.transformFromAst(ast, undefined, { presets: ['@babel/preset-env'] }, (err, result) => {
+        babel.transformFromAst(ast, undefined, getType() === 'ts' ?
+            {
+                presets: ['@babel/preset-typescript'],
+                filename: file,
+                plugins: ['@babel/plugin-transform-modules-commonjs']
+            } :
+            { presets: ['@babel/preset-env'] }, (err, result) => {
             if (err)
                 reject(err);
             resolve(result);
         });
     });
+    // console.log('p3', file);
     return { file, code: code || '', deps };
 });
 const parseModule = (entryPath) => __awaiter(void 0, void 0, void 0, function* () {
@@ -79,19 +94,22 @@ const parseModule = (entryPath) => __awaiter(void 0, void 0, void 0, function* (
 });
 const getBundle = (entryPath) => __awaiter(void 0, void 0, void 0, function* () {
     const depGraph = JSON.stringify(yield parseModule(entryPath));
-    return `(function (graph) {
-  function require(file) {
-    function absRequire(relPath) {
+    return `;(function (graph) {
+  var exportsInfo = {};
+  function require (file) {
+    if (exportsInfo[file]) return exportsInfo[file];
+    function absRequire (relPath) {
       return require(graph[file].deps[relPath]);
     }
     var exports = {};
-    (function (require,exports,code) {
+    exportsInfo[file] = exports;
+    (function (require, exports, code) {
       eval(code);
-    })(absRequire,exports,graph[file].code);
+    })(absRequire, exports, graph[file].code);
     return exports;
   }
   require('${entryPath}');
-})(${depGraph})`;
+})(${depGraph});`;
 });
 const main = (config) => __awaiter(void 0, void 0, void 0, function* () {
     const code = yield getBundle(config.entry);
@@ -102,10 +120,10 @@ const main = (config) => __awaiter(void 0, void 0, void 0, function* () {
     fs_1.default.writeFileSync(outputPath, code);
 });
 const config = {
-    entry: './src/index.js',
+    entry: './src/index.ts',
     output: {
         path: './dist',
-        filename: 'bundle.js'
+        filename: 'bundle_ts.js'
     }
 };
 main(config);
