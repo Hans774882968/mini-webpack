@@ -1,3 +1,5 @@
+## 手写webpack核心原理，支持typescript的编译和循环依赖问题的解决
+
 [toc]
 
 ### 主要知识点
@@ -7,6 +9,10 @@
 4. 算法：用**记忆化搜索**解决`require`函数的循环依赖问题
 
 ### Quick Start
+GitHub：https://github.com/Hans774882968/mini-webpack
+
+**作者：[hans774882968](https://blog.csdn.net/hans774882968)以及[hans774882968](https://juejin.cn/user/1464964842528888)以及[hans774882968](https://www.52pojie.cn/home.php?mod=space&uid=1906177)**
+
 ```
 npm install
 npm run bundle
@@ -34,7 +40,7 @@ npm i typescript@4.7.4
 1. 根据入口文件的拓展名，决定用ts或js来编译。
 2. 借鉴参考链接3，用“记忆化搜索”解决循环依赖问题。
 
-最大的缺憾是不清楚`ts-loader`怎么实现，因此这里编译ts的做法是直接判定入口文件的扩展名。
+最大的缺憾是不清楚`ts-loader`怎么实现，因此这里编译ts的做法是直接判定入口文件的扩展名为`.ts`，然后用babel实现。
 
 因为参考链接1写得很清晰了，本文仅定位为一个额外补充，不会写得很详细。
 
@@ -65,10 +71,10 @@ tsc --init
 
 1. 我们需要分析文件的`import`语句，把依赖的文件（相对路径）转换为相对于项目根目录的路径（下称“绝对路径”）。使用babel相关的库`@babel/parser`、`@babel/traverse`和`@babel/core`完成。
 2. 代码转换用`@babel/core`的`transformFromAst`方法完成。
-3. 我们需要保证生成的js的模块规范是`commonjs`。对于编译js的情况不需要特别指明，而编译ts的情况需要指明插件：`plugins: ['@babel/plugin-transform-modules-commonjs']`。
+3. 我们需要保证生成的js的模块规范是`commonjs`。对于编译js的情况不需要特别指明，而编译ts的情况需要指明插件：`plugins: ['@babel/plugin-transform-modules-commonjs']`（参考链接5）。
 
 #### 如何支持typescript的编译
-只需要修改`@babel/parser`的`parse`方法和`@babel/core`的`transformFromAst`方法的调用方式。需要用到`@babel/preset-typescript`这个插件。`@babel/preset-typescript`没有`@babel/preset-env`方便，需要指明`filename`属性。
+只需要修改`@babel/parser`的`parse`方法和`@babel/core`的`transformFromAst`方法的调用方式。需要用到`@babel/preset-typescript`这个插件。`@babel/preset-typescript`没有`@babel/preset-env`方便，需要指明`filename`属性和`@babel/plugin-transform-modules-commonjs`插件。
 
 相关语句：
 ```ts
@@ -129,7 +135,7 @@ babel.transformFromAst(ast, undefined,
 `depGraph`哈希表的一个对象的`deps`属性为什么设计为一个哈希表，而非直接设计为数组？因为待执行的代码中所有的路径都是相对路径，我们需要用`graph[file].deps[relPath]`这样的方式把它转换为绝对路径。为了完成这个转换，我们还需要设计`absRequire`函数，它只不过起到一个拦截器的作用。
 
 #### 如何解决循环依赖
-此时我们如果直接打包一个含有循环依赖的入口文件，会栈溢出。以最简单的情况为例：`a`模块的`a`函数引用`b`模块的`b`函数，`b`模块的`b`函数引用`a`模块的`a`函数。
+此时我们如果打包一个含有循环依赖的入口文件，运行时会栈溢出。以最简单的情况为例：`a`模块的`a`函数引用`b`模块的`b`函数，`b`模块的`b`函数引用`a`模块的`a`函数。
 
 怎么解决呢？根据参考链接3，我们可以用“记忆化搜索”的思路，开一个全局变量`var exportsInfo = {};`。并在`exports`对象生成以后，立即`exportsInfo[file] = exports;`。上文案例中，`b`模块获得的`a`模块的`exports`对象的值是空的，但因为对象的浅拷贝特性，**对象地址是正确的**，在`require`函数解析`a`模块完毕后，`b`模块也就能获得`a`模块的`exports`对象的正确值了。
 
@@ -143,3 +149,4 @@ babel.transformFromAst(ast, undefined,
 2. `@babel/core`官方文档：https://runebook.dev/zh-CN/docs/babel/babel-core/index
 3. webpack如何解决循环依赖：https://zhuanlan.zhihu.com/p/141863544
 4. 循环中使用`async/await`的解决方案：https://zhuanlan.zhihu.com/p/359341530
+5. https://babeljs.io/docs/en/babel-plugin-transform-modules-commonjs
